@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1B3A6B">
+<title>Bitácora HD</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icono-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;font-family:Poppins,-apple-system,Arial,sans-serif;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:#F4F3F7;color:#2b2b3a;min-height:100vh;padding-bottom:env(safe-area-inset-bottom)}
+.hd{background:#1B3A6B;color:#fff;padding:calc(14px + env(safe-area-inset-top)) 16px 14px;
+    display:flex;align-items:center;gap:11px;position:sticky;top:0;z-index:50}
+.hd h1{font-size:16px;font-weight:600;flex:1}
+.hd .sub{font-size:10px;color:#E6994C;letter-spacing:1.6px;margin-top:1px}
+.marca{width:34px;height:34px;border-radius:9px;background:#E6994C;display:flex;
+       align-items:center;justify-content:center;font-weight:600;font-size:14px;flex:none}
+.red{font-size:10px;padding:4px 9px;border-radius:20px;background:rgba(255,255,255,.14);white-space:nowrap}
+.red.off{background:#8a4b1e}
+main{max-width:640px;margin:0 auto;padding:14px}
+.tarjeta{background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;
+         box-shadow:0 1px 3px rgba(27,58,107,.07)}
+h2{font-size:15px;color:#1B3A6B;font-weight:600;margin-bottom:3px}
+.pista{font-size:11.5px;color:#8b8a99;line-height:1.5}
+label{display:block;font-size:11.5px;font-weight:600;color:#1B3A6B;margin:13px 0 5px}
+input,select,textarea{width:100%;padding:13px;border:1.5px solid #e2e0ea;border-radius:11px;
+                      font-size:16px;background:#fff;color:#2b2b3a}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#E6994C}
+textarea{resize:vertical;min-height:74px}
+.btn{width:100%;padding:15px;border:none;border-radius:12px;font-size:15px;font-weight:600;
+     color:#fff;background:#E6994C;margin-top:14px;cursor:pointer}
+.btn:disabled{background:#c9c7d2}
+.btn.azul{background:#1B3A6B}
+.btn.linea{background:transparent;border:1.5px solid #e2e0ea;color:#1B3A6B}
+.fila{display:flex;gap:9px;align-items:center}
+.fila>*{flex:1}
+.oculto{display:none}
+.aviso{padding:12px 14px;border-radius:11px;font-size:12.5px;margin-bottom:12px;line-height:1.5}
+.aviso.ok{background:#eaf5ee;color:#1e7a3d}
+.aviso.mal{background:#fdeded;color:#a50e0e}
+.aviso.pend{background:#fff7ee;color:#a8651c}
+.visita{border:1.5px solid #E6994C;background:#fffaf4;border-radius:12px;padding:12px;margin-bottom:10px}
+.visita b{font-size:14px;color:#1B3A6B}
+.visita .cuando{font-size:11px;color:#8b8a99;margin-top:2px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin:12px 0}
+.kpi{background:#f4f3f8;border-radius:10px;padding:9px 5px;text-align:center}
+.kpi b{display:block;font-size:17px;color:#E6994C;font-weight:600}
+.kpi span{font-size:8.5px;color:#8b8a99;text-transform:uppercase;letter-spacing:.4px}
+.area{font-size:10px;font-weight:600;color:#8b8a99;letter-spacing:1.6px;margin:16px 0 4px}
+.pt{padding:9px 0;border-top:1px solid #f0eff4}
+.pt .nom{font-size:13.5px;margin-bottom:7px}
+.est{display:flex;gap:5px;flex-wrap:wrap}
+.est button{flex:1;min-width:66px;padding:9px 4px;border:1.5px solid #e2e0ea;background:#fff;
+            border-radius:9px;font-size:11px;color:#8b8a99;cursor:pointer}
+.est button.on-ok{background:#1D9E75;border-color:#1D9E75;color:#fff;font-weight:600}
+.est button.on-ob{background:#E6994C;border-color:#E6994C;color:#fff;font-weight:600}
+.est button.on-nc{background:#C0392B;border-color:#C0392B;color:#fff;font-weight:600}
+.est button.nt{border-style:dashed;flex:0 0 76px}
+.hallazgo{font-size:11.5px;color:#a50e0e;margin-top:6px;padding-left:2px}
+.pie{text-align:center;font-size:10.5px;color:#a5a4b0;padding:20px 14px 30px;line-height:1.7}
+.cola{position:fixed;left:0;right:0;bottom:0;background:#1B3A6B;color:#fff;
+      padding:11px 16px calc(11px + env(safe-area-inset-bottom));font-size:12px;
+      display:flex;align-items:center;gap:10px;z-index:60}
+.cola button{padding:7px 13px;border:none;border-radius:8px;background:#E6994C;
+             color:#fff;font-size:12px;font-weight:600;cursor:pointer}
+.mdl{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:99;
+     background:rgba(27,58,107,.45);align-items:center;justify-content:center;padding:18px}
+.mdlbox{background:#fff;border-radius:15px;width:100%;max-width:400px;padding:20px 22px}
+.mdlt{font-size:15px;font-weight:600;color:#1B3A6B;padding-bottom:8px;
+      border-bottom:2px solid #E6994C;margin-bottom:10px}
+.mdlx{font-size:13px;color:#55555f;line-height:1.55}
+.mdlb{display:flex;gap:8px;margin-top:18px}
+.mdlb button{flex:1;padding:12px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer}
+#mc{border:1.5px solid #e2e0ea;background:#fff;color:#8b8a99}
+#ma{border:none;background:#E6994C;color:#fff}
+</style>
+</head>
+<body>
+
+<div class="hd">
+  <div class="marca">HD</div>
+  <div style="flex:1"><h1>Bitácora</h1><div class="sub">HOME DETAIL</div></div>
+  <div class="red" id="red">···</div>
+</div>
+
+<main>
+  <div id="p_login" class="tarjeta">
+    <h2>Entrar</h2>
+    <p class="pista">Usa el mismo usuario y contraseña del portal.</p>
+    <label>Usuario</label><input id="lg_u" autocomplete="username" autocapitalize="none">
+    <label>Contraseña</label><input id="lg_p" type="password" autocomplete="current-password">
+    <button class="btn" id="lg_b">Entrar</button>
+    <div id="lg_r"></div>
+  </div>
+
+  <div id="p_app" class="oculto">
+    <div id="avisos"></div>
+
+    <div class="tarjeta">
+      <h2 id="saludo">Hola</h2>
+      <p class="pista">Al llegar al edificio pulsa Iniciar visita. Funciona sin señal: lo que registres se sube solo cuando vuelva la conexión.</p>
+      <label>Edificio</label>
+      <select id="edificio"></select>
+      <label>Tipo de gestión</label>
+      <select id="tipo"></select>
+      <button class="btn azul" id="b_iniciar">Iniciar visita ahora</button>
+    </div>
+
+    <div id="encurso"></div>
+
+    <div id="p_visita" class="oculto">
+      <div class="tarjeta">
+        <h2>Inspección</h2>
+        <p class="pista">Todo empieza en Conforme. Marca solo lo que esté mal.</p>
+        <div class="kpis" id="kpis"></div>
+        <div id="chk"></div>
+      </div>
+
+      <div class="tarjeta">
+        <h2>Anotaciones</h2>
+        <label>Operativo y mantenimiento</label><textarea id="op"></textarea>
+        <label>Seguridad</label><textarea id="sg"></textarea>
+        <label>Convivencia</label><textarea id="cv"></textarea>
+        <div class="fila">
+          <div><label>Requerim. recibidos</label><input id="rr" type="number" inputmode="numeric" value="0"></div>
+          <div><label>Atendidos</label><input id="ra" type="number" inputmode="numeric" value="0"></div>
+        </div>
+        <label>Trabajo relevante</label><input id="tr">
+        <label>Costo (USD)</label><input id="tc" type="number" inputmode="decimal">
+        <button class="btn" id="b_cerrar">Cerrar visita</button>
+        <button class="btn linea" id="b_descartar">Descartar</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="pie">HOME DETAIL COSD S.A.S.<br>Se construye más si estamos unidos</div>
+<div class="cola oculto" id="cola"></div>
+
+<div class="mdl" id="mdl"><div class="mdlbox">
+  <div class="mdlt" id="mt"></div>
+  <div class="mdlx" id="mx"></div>
+  <input id="mi" class="oculto" style="margin-top:12px">
+  <div class="mdlb"><button id="mc">Cancelar</button><button id="ma">Aceptar</button></div>
+</div></div>
+
+<script src="app.js"></script>
+</body>
+</html>
