@@ -3,7 +3,7 @@
    desde ahí. Las llamadas al portal nunca se cachean: o hay señal o la
    app las pone en la cola.                                             */
 
-var CACHE = 'hd-bitacora-v4';
+var CACHE = 'hd-bitacora-v6';
 var ARCHIVOS = [
   './',
   './index.html',

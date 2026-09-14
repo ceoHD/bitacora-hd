@@ -12,7 +12,7 @@
 var API = 'https://script.google.com/macros/s/AKfycbwMzw7PydnvsFRz7JNCnp3mGVXgSb-ZoecyT7ss9bs_MoCeaphyxfS4rHGeRgd95oqVBQ/exec';
 
 var G = { token: '', nombre: '', edificios: [], checklist: {}, tipos: [],
-          visita: null, chk: [], cola: [] };
+          visita: null, chk: [], cola: [], fallidos: [] };
 
 /* ── guardar y leer del teléfono ── */
 /* Devuelve false si no cupo. Importa desde que hay fotos: el teléfono le
@@ -102,11 +102,10 @@ el('lg_b').onclick = function () {
          lista de inspección de cada uno—, y eso puede tardar un minuto largo
          la primera vez. Sin este aviso la pantalla se queda quieta y parece
          que el botón no hizo nada.                                        */
-      b.textContent = 'Preparando tus edificios...';
-      el('lg_r').innerHTML = '<div class="aviso">Hola, ' + String(r.nombre).split(' ')[0]
-        + '. Estoy descargando tus edificios para que puedas trabajar sin señal.'
-        + '<br><b>Solo la primera vez</b>, y puede tardar un minuto. No cierres la app.</div>';
+      b.textContent = 'Entrando...';
+      el('lg_r').innerHTML = '<div class="aviso">Hola, ' + String(r.nombre).split(' ')[0] + '.</div>';
 
+      guardar('usuario', u);              // para no volver a escribirlo
       descargarCatalogo(function (ok, msg) {
         b.disabled = false; b.textContent = 'Entrar';
         if (!ok) {
@@ -121,6 +120,7 @@ el('lg_b').onclick = function () {
         }
         el('lg_r').innerHTML = '';
         abrirApp();
+        bajarChecklists();               // el resto, en segundo plano
       });
     })
     .catch(function () {
@@ -134,17 +134,53 @@ el('lg_b').onclick = function () {
    Avisa al terminar si salió bien o no: antes se lo tragaba en silencio y
    la app se abría vacía, sin un solo edificio y sin explicación.         */
 function descargarCatalogo(cb) {
-  api({ accion: 'catalogo', token: G.token }).then(function (r) {
+  api({ accion: 'catalogo', token: G.token, soloLista: true }).then(function (r) {
     if (!r.ok) { if (cb) cb(false, r.msg || ''); return; }
     G.edificios = r.edificios || [];
-    G.checklist = r.checklist || {};
     G.tipos = r.tiposGestion || [];
+    // las listas de inspección ya bajadas NO se tiran: bajarlas cuesta
+    var prev = leer('checklist', {});
+    for (var k in (r.checklist || {})) prev[k] = r.checklist[k];
+    G.checklist = prev;
     guardar('edificios', G.edificios);
     guardar('checklist', G.checklist);
     guardar('tipos', G.tipos);
     guardar('bajado', new Date().getTime());
     if (cb) cb(true, '');
   }).catch(function (e) { if (cb) cb(false, (e && e.message) || 'se cortó la conexión'); });
+}
+
+/* Las listas de inspección se bajan DESPUÉS de entrar, una por una y sin
+   bloquear nada. Cada edificio cuesta un par de segundos porque hay que ir
+   a Drive; en segundo plano no molesta, y al terminar la app ya trabaja sin
+   señal en todos. Si se corta, se retoma la próxima vez.               */
+var bajando = false;
+function bajarChecklists(cb) {
+  if (bajando || !navigator.onLine || !G.token) { if (cb) cb(); return; }
+  var faltan = G.edificios.filter(function (e) { return !G.checklist[e]; });
+  if (!faltan.length) { avisoChk(''); if (cb) cb(); return; }
+  bajando = true;
+  var i = 0;
+  var siguiente = function () {
+    if (i >= faltan.length || !navigator.onLine) {
+      bajando = false; avisoChk(''); pintarVisita(); if (cb) cb(); return;
+    }
+    var ed = faltan[i++];
+    avisoChk('Preparando el modo sin señal: ' + i + ' de ' + faltan.length + ' edificios.');
+    api({ accion: 'checklist', token: G.token, edificio: ed }).then(function (r) {
+      if (r && r.ok) {
+        G.checklist[ed] = { items: r.items || [], ocultos: r.ocultos || [] };
+        guardar('checklist', G.checklist);
+      }
+      setTimeout(siguiente, 60);
+    }).catch(function () { setTimeout(siguiente, 400); });
+  };
+  siguiente();
+}
+
+function avisoChk(txt) {
+  var a = el('avisos'); if (!a) return;
+  a.innerHTML = txt ? ('<div class="aviso">' + txt + '</div>') : '';
 }
 
 function abrirApp() {
@@ -427,15 +463,61 @@ function encolar(d) {
 
 function pintarCola() {
   var c = el('cola');
-  if (!G.cola.length) { c.className = 'cola oculto'; document.body.style.paddingBottom = ''; return; }
-  c.className = 'cola';
+  if (!G.cola.length && !G.fallidos.length) {
+    c.className = 'cola oculto'; document.body.style.paddingBottom = ''; return;
+  }
+  c.className = 'cola' + (G.cola.length ? '' : ' mal');
   document.body.style.paddingBottom = '64px';
-  c.innerHTML = '<span style="flex:1">' + G.cola.length + ' registro(s) por subir</span>';
-  var b = document.createElement('button');
-  b.textContent = navigator.onLine ? 'Subir ahora' : 'Sin señal';
-  b.disabled = !navigator.onLine;
-  b.onclick = sincronizar;
-  c.appendChild(b);
+  c.innerHTML = '';
+  var txt = document.createElement('span');
+  txt.style.flex = '1';
+  txt.textContent = G.cola.length
+    ? (G.cola.length + ' registro(s) por subir'
+       + (G.fallidos.length ? ('  ·  ' + G.fallidos.length + ' rechazado(s)') : ''))
+    : (G.fallidos.length + ' registro(s) NO se pudieron subir');
+  c.appendChild(txt);
+
+  if (G.cola.length) {
+    var b = document.createElement('button');
+    b.textContent = navigator.onLine ? 'Subir ahora' : 'Sin señal';
+    b.disabled = !navigator.onLine;
+    b.onclick = sincronizar;
+    c.appendChild(b);
+  } else {
+    var v = document.createElement('button');
+    v.textContent = 'Ver por qué';
+    v.onclick = verFallidos;
+    c.appendChild(v);
+  }
+}
+
+/* Qué se rechazó y por qué. Lo más común: intentar abrir una visita en un
+   edificio que ya tiene otra sin cerrar.                                 */
+function verFallidos() {
+  if (!G.fallidos.length) { avisar('No hay nada rechazado.'); return; }
+  var f = G.fallidos[0];
+  var qué = f.accion === 'iniciarVisita' ? 'Inicio de visita'
+          : f.accion === 'cerrarVisita' ? 'Cierre de visita'
+          : f.accion === 'registrarVisita' ? 'Visita completa'
+          : f.accion === 'requerimiento' ? 'Requerimiento de compra'
+          : f.accion === 'evidencia' ? 'Foto o archivo'
+          : f.accion;
+  confirmar(qué + ' — rechazado',
+    (f.edificio ? (f.edificio + '\n') : '') + f.motivo
+    + '\n\nAceptar: volver a intentarlo.\nCancelar: dejarlo en la lista.',
+    function () {
+      G.fallidos.shift();
+      delete f.motivo; delete f.cuando;
+      G.cola.push(f);
+      guardar('fallidos', G.fallidos); guardar('cola', G.cola);
+      pintarCola();
+      if (navigator.onLine) sincronizar();
+    });
+}
+
+// ►► para descartar de veras lo que ya no sirve
+function olvidarFallidos() {
+  G.fallidos = []; guardar('fallidos', G.fallidos); pintarCola();
 }
 
 var sincronizando = false;
@@ -464,7 +546,16 @@ function sincronizar() {
                       nombre: a.nombre, tipo: a.tipo, datos: a.datos });
       });
     }
-    // se saca de la cola aunque el servidor la rechace: si no, se queda trabada
+    /* Si el servidor lo RECHAZA no se puede dejar en la cola —se atascaría
+       todo detrás— pero tirarlo en silencio es peor: el administrador llenó
+       la visita en el sótano y desaparecería sin que nadie se entere.
+       Se aparta con el motivo, y él decide.                              */
+    if (r && !r.ok) {
+      d.motivo = r.msg || 'el servidor lo rechazó sin explicar por qué';
+      d.cuando = new Date().toISOString().slice(0, 16).replace('T', ' ');
+      G.fallidos.push(d);
+      guardar('fallidos', G.fallidos);
+    }
     G.cola.shift();
     guardar('cola', G.cola);
     pintarCola();
@@ -708,10 +799,16 @@ function marcarComp(id, estado) {
   G.visita = leer('visita', null);
   G.chk = leer('chk', []);
   G.cola = leer('cola', []);
+  G.fallidos = leer('fallidos', []);
+
+  var us = leer('usuario', '');
+  if (us && el('lg_u')) el('lg_u').value = us;
 
   if (G.token && G.nombre) {
-    abrirApp();
-    if (navigator.onLine) descargarCatalogo(function () { abrirApp(); });
+    abrirApp();                                   // sin esperar a nadie
+    if (navigator.onLine) descargarCatalogo(function (ok) {
+      if (ok) { abrirApp(); bajarChecklists(); }
+    });
   }
 
   Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (b) {
