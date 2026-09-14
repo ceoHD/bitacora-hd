@@ -61,6 +61,20 @@ textarea{resize:vertical;min-height:74px}
 .est button.on-nc{background:#C0392B;border-color:#C0392B;color:#fff;font-weight:600}
 .est button.nt{border-style:dashed;flex:0 0 76px}
 .hallazgo{font-size:11.5px;color:#a50e0e;margin-top:6px;padding-left:2px}
+    .adj{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:7px}
+    .adjb{border:1px dashed #c9c7d2;background:#fff;color:#1B3A6B;border-radius:8px;
+          padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+    .adjb:active{background:#f2f1f6}
+    .adjn{font-size:11.5px;color:#1e7a3d;font-weight:600}
+    .tabs{display:flex;gap:6px;margin-bottom:12px}
+    .tab{flex:1;padding:11px 4px;border:1px solid #e2e0ea;background:#fff;color:#55555f;
+         border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+    .tab.on{background:#1B3A6B;border-color:#1B3A6B;color:#fff}
+    .cmp{border:1px solid #ececf1;border-radius:10px;padding:10px 11px;margin-bottom:7px}
+    .cmp.venc{border-color:#e2b5b1;background:#fdf3f2}
+    .cmpx{font-size:13px;color:#2b2b3a;line-height:1.45}
+    .cmpm{font-size:11px;color:#8b8a99;margin-top:3px}
+    .cmpb{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .pie{text-align:center;font-size:10.5px;color:#a5a4b0;padding:20px 14px 30px;line-height:1.7}
 .cola{position:fixed;left:0;right:0;bottom:0;background:#1B3A6B;color:#fff;
       padding:11px 16px calc(11px + env(safe-area-inset-bottom));font-size:12px;
@@ -100,6 +114,14 @@ textarea{resize:vertical;min-height:74px}
   <div id="p_app" class="oculto">
     <div id="avisos"></div>
 
+    <nav class="tabs" id="tabs">
+      <button class="tab on" data-p="bit">Bitácora</button>
+      <button class="tab" data-p="req">Requerimiento</button>
+      <button class="tab" data-p="cmp">Compromisos</button>
+    </nav>
+
+    <div class="pan" id="pan_bit">
+
     <div class="tarjeta">
       <h2 id="saludo">Hola</h2>
       <p class="pista">Al llegar al edificio pulsa Iniciar visita. Funciona sin señal: lo que registres se sube solo cuando vuelva la conexión.</p>
@@ -133,6 +155,77 @@ textarea{resize:vertical;min-height:74px}
         <label>Costo (USD)</label><input id="tc" type="number" inputmode="decimal">
         <button class="btn" id="b_cerrar">Cerrar visita</button>
         <button class="btn linea" id="b_descartar">Descartar</button>
+      </div>
+    </div>
+    </div>
+
+    <div class="pan oculto" id="pan_req">
+      <div class="tarjeta">
+        <h2>Requerimiento de compra</h2>
+        <p class="pista">Descríbelo aquí, frente al equipo. Procurement cotiza y compra.
+          <b>No se suben proformas</b>, pero sí fotos. Funciona sin señal.</p>
+
+        <label>Edificio</label><select id="rq_e"></select>
+        <label>¿Qué clase de requerimiento es?</label><select id="rq_t"></select>
+        <p class="pista" id="rq_pista"></p>
+
+        <div class="fila">
+          <div><label>Rubro</label><select id="rq_ru"></select></div>
+          <div><label>Sistema</label><select id="rq_si"></select></div>
+        </div>
+        <div id="rq_otrow" class="oculto"><label>¿Cuál es el rubro?</label><input id="rq_ro"></div>
+        <div id="rq_sisrow" class="oculto"><label>¿Qué sistema?</label><input id="rq_so"></div>
+
+        <div class="fila">
+          <div><label>Cantidad</label><input id="rq_ca" placeholder="1"></div>
+          <div><label>Urgencia</label><select id="rq_ur"></select></div>
+        </div>
+
+        <label>Qué se necesita</label>
+        <textarea id="rq_de" placeholder="Una bomba de presurización de reemplazo, con instalación."></textarea>
+
+        <label>Por qué se pide</label>
+        <textarea id="rq_pb" placeholder="Se apaga sola cada dos horas y hay que rearmarla a mano."></textarea>
+
+        <div id="rq_clavew">
+          <label id="rq_clavel">Detalle</label>
+          <input id="rq_clave">
+        </div>
+
+        <label>Otras especificaciones</label>
+        <textarea id="rq_es" placeholder="Dimensiones, material, voltaje, lo que sepas."></textarea>
+
+        <label>Monto estimado (opcional)</label>
+        <input id="rq_me" type="number" inputmode="decimal" placeholder="Solo referencial">
+
+        <label>Fotos para Procurement</label>
+        <p class="pista">La placa del equipo, el daño, el espacio donde va. Se encogen solas.</p>
+        <div class="adj">
+          <button class="adjb" id="rq_foto">📷&nbsp; Tomar foto</button>
+          <button class="adjb" id="rq_arch">📎&nbsp; Archivo</button>
+          <span class="adjn" id="rq_adjn"></span>
+        </div>
+
+        <button class="btn" id="b_req">Enviar a Procurement</button>
+        <div id="rq_r"></div>
+      </div>
+
+      <div class="tarjeta">
+        <h2>Mis requerimientos</h2>
+        <button class="btn linea" id="b_verreq">Ver los de este edificio</button>
+        <div id="rq_lista"></div>
+      </div>
+    </div>
+
+    <div class="pan oculto" id="pan_cmp">
+      <div class="tarjeta">
+        <h2>Compromisos</h2>
+        <p class="pista">Lo que quedó pendiente en las actas. Los vencidos salen primero.</p>
+        <label>Edificio</label><select id="cm_e"></select>
+        <label>Buscar</label><input id="cm_q" placeholder="bomba · CCTV · responsable">
+        <button class="btn" id="b_cmp">Buscar compromisos</button>
+        <div id="cm_res"></div>
+        <div id="cm_lista"></div>
       </div>
     </div>
   </div>

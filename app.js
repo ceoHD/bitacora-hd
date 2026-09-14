@@ -15,7 +15,13 @@ var G = { token: '', nombre: '', edificios: [], checklist: {}, tipos: [],
           visita: null, chk: [], cola: [] };
 
 /* ── guardar y leer del teléfono ── */
-function guardar(k, v) { try { localStorage.setItem('hd_' + k, JSON.stringify(v)); } catch (e) {} }
+/* Devuelve false si no cupo. Importa desde que hay fotos: el teléfono le
+   presta a la app unos 5 MB, y antes esto se tragaba el error en silencio
+   —el administrador creía que había guardado y no había nada—.          */
+function guardar(k, v) {
+  try { localStorage.setItem('hd_' + k, JSON.stringify(v)); return true; }
+  catch (e) { return false; }
+}
 function leer(k, def) {
   try { var v = localStorage.getItem('hd_' + k); return v ? JSON.parse(v) : def; }
   catch (e) { return def; }
@@ -81,34 +87,64 @@ el('lg_b').onclick = function () {
   if (!u || !p) { avisar('Escribe tu usuario y tu contraseña.'); return; }
   if (!navigator.onLine) { avisar('Para entrar la primera vez necesitas conexión. Después ya funciona sin señal.'); return; }
   var b = this; b.disabled = true; b.textContent = 'Entrando...';
+  el('lg_r').innerHTML = '';
   api({ accion: 'login', usuario: u, clave: p })
     .then(function (r) {
-      b.disabled = false; b.textContent = 'Entrar';
-      if (!r.ok) { el('lg_r').innerHTML = '<div class="aviso mal">' + r.msg + '</div>'; return; }
+      if (!r.ok) {
+        b.disabled = false; b.textContent = 'Entrar';
+        el('lg_r').innerHTML = '<div class="aviso mal">' + r.msg + '</div>';
+        return;
+      }
       G.token = r.token; G.nombre = r.nombre;
       guardar('token', r.token); guardar('nombre', r.nombre);
-      descargarCatalogo(function () { abrirApp(); });
+
+      /* Entrar fue lo rápido. Ahora se baja el catálogo —los edificios y la
+         lista de inspección de cada uno—, y eso puede tardar un minuto largo
+         la primera vez. Sin este aviso la pantalla se queda quieta y parece
+         que el botón no hizo nada.                                        */
+      b.textContent = 'Preparando tus edificios...';
+      el('lg_r').innerHTML = '<div class="aviso">Hola, ' + String(r.nombre).split(' ')[0]
+        + '. Estoy descargando tus edificios para que puedas trabajar sin señal.'
+        + '<br><b>Solo la primera vez</b>, y puede tardar un minuto. No cierres la app.</div>';
+
+      descargarCatalogo(function (ok, msg) {
+        b.disabled = false; b.textContent = 'Entrar';
+        if (!ok) {
+          el('lg_r').innerHTML = '<div class="aviso mal">Entraste, pero no pude bajar '
+            + 'tus edificios' + (msg ? (': ' + msg) : '.') + '<br>Vuelve a pulsar Entrar.</div>';
+          return;
+        }
+        if (!G.edificios.length) {
+          el('lg_r').innerHTML = '<div class="aviso mal">No tienes edificios asignados. '
+            + 'Pide al back office que te designe.</div>';
+          return;
+        }
+        el('lg_r').innerHTML = '';
+        abrirApp();
+      });
     })
     .catch(function () {
       b.disabled = false; b.textContent = 'Entrar';
-      el('lg_r').innerHTML = '<div class="aviso mal">No se pudo conectar. Revisa la señal.</div>';
+      el('lg_r').innerHTML = '<div class="aviso mal">No se pudo conectar con el portal. '
+        + 'Revisa la señal e inténtalo otra vez.</div>';
     });
 };
 
-/* Trae de una sola vez todo lo que la app necesita para trabajar sin señal. */
+/* Trae de una sola vez todo lo que la app necesita para trabajar sin señal.
+   Avisa al terminar si salió bien o no: antes se lo tragaba en silencio y
+   la app se abría vacía, sin un solo edificio y sin explicación.         */
 function descargarCatalogo(cb) {
   api({ accion: 'catalogo', token: G.token }).then(function (r) {
-    if (r.ok) {
-      G.edificios = r.edificios || [];
-      G.checklist = r.checklist || {};
-      G.tipos = r.tiposGestion || [];
-      guardar('edificios', G.edificios);
-      guardar('checklist', G.checklist);
-      guardar('tipos', G.tipos);
-      guardar('bajado', new Date().getTime());
-    }
-    if (cb) cb();
-  }).catch(function () { if (cb) cb(); });
+    if (!r.ok) { if (cb) cb(false, r.msg || ''); return; }
+    G.edificios = r.edificios || [];
+    G.checklist = r.checklist || {};
+    G.tipos = r.tiposGestion || [];
+    guardar('edificios', G.edificios);
+    guardar('checklist', G.checklist);
+    guardar('tipos', G.tipos);
+    guardar('bajado', new Date().getTime());
+    if (cb) cb(true, '');
+  }).catch(function (e) { if (cb) cb(false, (e && e.message) || 'se cortó la conexión'); });
 }
 
 function abrirApp() {
@@ -123,8 +159,13 @@ function abrirApp() {
   (G.tipos.length ? G.tipos : ['Visita presencial programada']).forEach(function (x) {
     var o = document.createElement('option'); o.value = x; o.textContent = x; t.appendChild(o);
   });
+  ['rq_e', 'cm_e'].forEach(function (k) {
+    var s = el(k); if (!s) return;
+    s.innerHTML = G.edificios.map(function (x) { return '<option>' + x + '</option>'; }).join('');
+  });
   if (!G.edificios.length) {
-    el('avisos').innerHTML = '<div class="aviso mal">No tienes edificios asignados. Pide que te asignen en la hoja EDIFICIOS.</div>';
+    el('avisos').innerHTML = '<div class="aviso mal">No tienes edificios asignados. '
+      + 'Pide al back office que te designe en la hoja REGLAS.</div>';
   }
   pintarVisita();
   pintarCola();
@@ -195,6 +236,25 @@ function pintarChk() {
     if (x.estado !== 'Conforme' && x.desc) {
       var d = document.createElement('div'); d.className = 'hallazgo'; d.textContent = x.desc; row.appendChild(d);
     }
+    /* La cámara aparece solo donde hace falta: en lo que está mal. Poner
+       el botón en los 24 puntos sería ruido en una pantalla de teléfono. */
+    if (x.estado === 'Con observación' || x.estado === 'No conforme') {
+      var adj = document.createElement('div'); adj.className = 'adj';
+      var bf = document.createElement('button');
+      bf.className = 'adjb'; bf.textContent = '📷  Foto';
+      bf.onclick = function () { adjuntar(i, true); };
+      adj.appendChild(bf);
+      var ba = document.createElement('button');
+      ba.className = 'adjb'; ba.textContent = '📎  Archivo';
+      ba.onclick = function () { adjuntar(i, false); };
+      adj.appendChild(ba);
+      if (x.adj) {
+        var cu = document.createElement('span'); cu.className = 'adjn';
+        cu.textContent = x.adj + (x.adj === 1 ? ' adjunto' : ' adjuntos');
+        adj.appendChild(cu);
+      }
+      row.appendChild(adj);
+    }
     c.appendChild(row);
   });
   resumen();
@@ -206,6 +266,86 @@ function marcar(i, est) {
   preguntar(x.item, x.area + ' · ' + est + '\nQué se encontró y qué se hizo.', x.desc, function (t) {
     x.estado = est; x.desc = t; guardar('chk', G.chk); pintarChk();
   });
+}
+
+/* ══════════════ EVIDENCIAS ══════════════
+   Una foto del hallazgo, tomada con el edificio delante, vale más que el
+   párrafo que lo describe. Queda unida al punto del checklist, no suelta.  */
+
+var EVID_LADO = 1200;      // el lado mayor de la foto, en píxeles
+var EVID_CALIDAD = 0.72;   // compresión JPEG
+var EVID_TOPE_DOC = 3;     // MB por documento; las fotos se encogen solas
+
+/* Una foto de celular pesa 4 MB y no cabe en la cola sin señal. Se redibuja
+   más pequeña antes de guardarla: a 1200 px se sigue leyendo la placa de un
+   motor o la mancha de una filtración, que es para lo que sirve.          */
+function encogerFoto(file, cb) {
+  var fr = new FileReader();
+  fr.onload = function () {
+    var img = new Image();
+    img.onload = function () {
+      var w = img.width, h = img.height, m = Math.max(w, h);
+      if (m > EVID_LADO) { var r = EVID_LADO / m; w = Math.round(w * r); h = Math.round(h * r); }
+      try {
+        var cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        cb(cv.toDataURL('image/jpeg', EVID_CALIDAD), 'image/jpeg');
+      } catch (e) { cb(fr.result, file.type); }   // si el canvas falla, va tal cual
+    };
+    img.onerror = function () { cb(fr.result, file.type); };
+    img.src = fr.result;
+  };
+  fr.onerror = function () { cb(null, ''); };
+  fr.readAsDataURL(file);
+}
+
+function leerTalCual(file, cb) {
+  var fr = new FileReader();
+  fr.onload = function () { cb(fr.result, file.type || 'application/octet-stream'); };
+  fr.onerror = function () { cb(null, ''); };
+  fr.readAsDataURL(file);
+}
+
+function adjuntar(i, esFoto) {
+  var x = G.chk[i];
+  if (!G.visita) { avisar('Primero inicia la visita.'); return; }
+  var inp = document.createElement('input');
+  inp.type = 'file';
+  if (esFoto) { inp.accept = 'image/*'; inp.capture = 'environment'; }
+  else { inp.accept = 'image/*,.pdf,.doc,.docx,.xls,.xlsx'; }
+  inp.onchange = function () {
+    var f = inp.files && inp.files[0];
+    if (!f) return;
+    var esImagen = /^image\//.test(f.type);
+    if (!esImagen && f.size > EVID_TOPE_DOC * 1048576) {
+      avisar('Ese archivo pesa ' + (f.size / 1048576).toFixed(1) + ' MB y el tope son '
+           + EVID_TOPE_DOC + ' MB. Las fotos no tienen ese problema: se encogen solas.');
+      return;
+    }
+    var listo = function (datos, tipo) {
+      if (!datos) { avisar('No pude leer el archivo.'); return; }
+      var antes = G.cola.slice();
+      G.cola.push({
+        accion: 'evidencia', edificio: G.visita.edificio, visita: G.visita.id || '',
+        clave: x.clave, item: x.item, estado: x.estado,
+        nombre: f.name || '', tipo: tipo, datos: datos
+      });
+      if (!guardar('cola', G.cola)) {
+        G.cola = antes; guardar('cola', G.cola);
+        avisar('No queda espacio en el teléfono para más adjuntos sin señal. '
+             + 'Conéctate para que se suban los que ya tienes y vuelve a intentarlo.',
+               'Sin espacio');
+        return;
+      }
+      x.adj = (x.adj || 0) + 1;
+      guardar('chk', G.chk);
+      pintarChk(); pintarCola();
+      if (navigator.onLine) sincronizar();
+    };
+    if (esImagen) encogerFoto(f, listo); else leerTalCual(f, listo);
+  };
+  inp.click();
 }
 
 function noTiene(i) {
@@ -304,11 +444,25 @@ function sincronizar() {
   sincronizando = true;
   var d = G.cola[0];
   d.token = G.token;
-  api(d).then(function (r) {
+  /* Los adjuntos van aparte, y DESPUÉS: el requerimiento todavía no tiene
+     número hasta que el servidor lo emite, y sin número el adjunto no
+     sabría a qué documento acompañar.                                    */
+  var adj = d.adjuntos || [];
+  var envio = {};
+  for (var k in d) if (k !== 'adjuntos') envio[k] = d[k];
+
+  api(envio).then(function (r) {
     sincronizando = false;
     if (r && r.expirado) {
       avisar('Tu sesión caducó. Vuelve a entrar; lo que registraste no se pierde.');
       return;
+    }
+    if (r && r.ok && r.num && adj.length) {
+      adj.forEach(function (a) {
+        G.cola.push({ accion: 'evidencia', origen: 'compra', edificio: d.edificio,
+                      referencia: r.num, item: d.requerimiento || '',
+                      nombre: a.nombre, tipo: a.tipo, datos: a.datos });
+      });
     }
     // se saca de la cola aunque el servidor la rechace: si no, se queda trabada
     G.cola.shift();
@@ -316,6 +470,231 @@ function sincronizar() {
     pintarCola();
     if (G.cola.length) setTimeout(sincronizar, 400);
   }).catch(function () { sincronizando = false; });
+}
+
+
+/* ══════════════ LOS TRES MÓDULOS ══════════════
+   La bitácora es lo que se hace en el sótano. El requerimiento se escribe
+   frente al equipo averiado —ahí es cuando se describe bien—, y los
+   compromisos se consultan en la visita. Los tres, sin señal.        */
+
+var PANEL = 'bit';
+function irA(p) {
+  PANEL = p;
+  ['bit', 'req', 'cmp'].forEach(function (k) {
+    el('pan_' + k).className = 'pan' + (k === p ? '' : ' oculto');
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (b) {
+    b.className = 'tab' + (b.getAttribute('data-p') === p ? ' on' : '');
+  });
+  window.scrollTo(0, 0);
+  if (p === 'req' && !CAT_COMPRA) traerCatalogoCompra();
+}
+
+/* ── Requerimiento de compra ── */
+var CAT_COMPRA = null;     // rubros, sistemas y tipos, del servidor
+var ADJ_REQ = [];          // fotos y archivos en espera de este requerimiento
+
+function traerCatalogoCompra(cb) {
+  var g = leer('catcompra', null);
+  if (g) { CAT_COMPRA = g; pintarCatalogoCompra(); if (cb) cb(); }
+  if (!navigator.onLine) { if (!g) avisar('La primera vez necesitas conexión para cargar las listas.'); return; }
+  api({ accion: 'catalogoCompra', token: G.token }).then(function (r) {
+    if (!r.ok) return;
+    CAT_COMPRA = r; guardar('catcompra', r); pintarCatalogoCompra(); if (cb) cb();
+  }).catch(function () {});
+}
+
+function opciones(sel, lista, vacio) {
+  var s = el(sel); if (!s) return;
+  var antes = s.value;
+  s.innerHTML = (vacio ? '<option value="">— ' + vacio + ' —</option>' : '')
+    + (lista || []).map(function (x) { return '<option>' + x + '</option>'; }).join('');
+  if (antes) s.value = antes;
+}
+
+function pintarCatalogoCompra() {
+  if (!CAT_COMPRA) return;
+  opciones('rq_ru', CAT_COMPRA.rubros);
+  opciones('rq_si', CAT_COMPRA.sistemas, 'no aplica');
+  opciones('rq_ur', CAT_COMPRA.urgencias);
+  var t = el('rq_t');
+  if (t && !t.options.length) {
+    t.innerHTML = (CAT_COMPRA.tipos || []).map(function (x) {
+      return '<option value="' + x.clave + '">' + x.titulo + '</option>';
+    }).join('');
+  }
+  cambiaTipoReq();
+}
+
+/* Cada tipo tiene un dato sin el cual Procurement no puede cotizar. En el
+   teléfono se pide ESE, no los siete del portal: una pantalla larga en la
+   calle no se llena.                                                    */
+var CLAVE_POR_TIPO = {
+  bien:       { campo: 'marcaModelo',  et: 'Marca o modelo de referencia', ph: 'Pedrollo CP 620 o equivalente' },
+  insumo:     { campo: 'presentacion', et: 'Presentación',                 ph: 'Galón · caja de 12 · saco de 25 kg' },
+  recurrente: { campo: 'frecuencia',   et: 'Frecuencia',                   ph: 'Diaria · 3 veces por semana · mensual' },
+  puntual:    { campo: 'alcance',      et: 'Alcance del trabajo',          ph: 'Qué hay que hacer exactamente' },
+  obra:       { campo: 'area',         et: 'Área o metraje',               ph: '120 m² de pared · 40 m lineales' }
+};
+
+function cambiaTipoReq() {
+  var t = v('rq_t') || 'bien';
+  var c = CLAVE_POR_TIPO[t] || CLAVE_POR_TIPO.bien;
+  el('rq_clavel').textContent = c.et;
+  el('rq_clave').placeholder = c.ph;
+  var pista = '';
+  (((CAT_COMPRA || {}).tipos) || []).forEach(function (x) { if (x.clave === t) pista = x.pista; });
+  el('rq_pista').textContent = pista;
+}
+
+function verOtroReq() {
+  var ro = CAT_COMPRA ? CAT_COMPRA.rubroOtros : 'Otros';
+  var so = CAT_COMPRA ? CAT_COMPRA.sistemaOtro : 'Otro';
+  el('rq_otrow').className = (v('rq_ru') === ro) ? '' : 'oculto';
+  el('rq_sisrow').className = (v('rq_si') === so) ? '' : 'oculto';
+}
+
+function adjuntarReq(esFoto) {
+  pedirArchivo(esFoto, function (datos, tipo, nombre) {
+    ADJ_REQ.push({ datos: datos, tipo: tipo, nombre: nombre });
+    el('rq_adjn').textContent = ADJ_REQ.length + (ADJ_REQ.length === 1 ? ' adjunto' : ' adjuntos');
+  });
+}
+
+/* Lo común de pedir un archivo: la cámara o el explorador, encoger si es
+   imagen, y devolver los datos listos. Lo usan la bitácora y compras.  */
+function pedirArchivo(esFoto, cb) {
+  var inp = document.createElement('input');
+  inp.type = 'file';
+  if (esFoto) { inp.accept = 'image/*'; inp.capture = 'environment'; }
+  else { inp.accept = 'image/*,.pdf,.doc,.docx,.xls,.xlsx'; }
+  inp.onchange = function () {
+    var f = inp.files && inp.files[0];
+    if (!f) return;
+    var esImagen = /^image\//.test(f.type);
+    if (!esImagen && f.size > EVID_TOPE_DOC * 1048576) {
+      avisar('Ese archivo pesa ' + (f.size / 1048576).toFixed(1) + ' MB y el tope son '
+           + EVID_TOPE_DOC + ' MB. Las fotos se encogen solas.');
+      return;
+    }
+    var listo = function (datos, tipo) {
+      if (!datos) { avisar('No pude leer el archivo.'); return; }
+      cb(datos, tipo, f.name || '');
+    };
+    if (esImagen) encogerFoto(f, listo); else leerTalCual(f, listo);
+  };
+  inp.click();
+}
+
+function enviarReq() {
+  var ed = v('rq_e'), t = v('rq_t') || 'bien';
+  if (!ed) { avisar('Elige el edificio.'); return; }
+  if (v('rq_de').length < 12) { avisar('Escribe qué se necesita: qué es y para qué.', 'Falta el requerimiento'); return; }
+  if (v('rq_pb').length < 15) { avisar('Cuenta qué pasa. Procurement cotiza distinto si falla a ratos o si ya no funciona.', 'Falta el porqué'); return; }
+  var ro = CAT_COMPRA ? CAT_COMPRA.rubroOtros : 'Otros';
+  var so = CAT_COMPRA ? CAT_COMPRA.sistemaOtro : 'Otro';
+  if (v('rq_ru') === ro && !v('rq_ro')) { avisar('Elegiste Otros: escribe cuál.'); return; }
+  if (v('rq_si') === so && !v('rq_so')) { avisar('Elegiste Otro: escribe qué sistema.'); return; }
+  var c = CLAVE_POR_TIPO[t] || CLAVE_POR_TIPO.bien;
+  if (!v('rq_clave')) { avisar('Falta ' + c.et.toLowerCase() + '. Sin eso no se puede cotizar.', 'Falta un dato'); return; }
+
+  var d = {
+    accion: 'requerimiento', tipo: t, edificio: ed,
+    rubro: v('rq_ru'), rubroOtro: v('rq_ro'),
+    sistema: v('rq_si'), sistemaOtro: v('rq_so'),
+    cantidad: v('rq_ca'), urgencia: v('rq_ur'),
+    requerimiento: v('rq_de'), problema: v('rq_pb'),
+    especificaciones: v('rq_es'), montoEstimado: v('rq_me'),
+    adjuntos: ADJ_REQ.slice()
+  };
+  d[c.campo] = v('rq_clave');
+
+  var antes = G.cola.slice();
+  G.cola.push(d);
+  if (!guardar('cola', G.cola)) {
+    G.cola = antes; guardar('cola', G.cola);
+    avisar('No queda espacio en el teléfono. Conéctate para que se suba lo que tienes en cola.', 'Sin espacio');
+    return;
+  }
+  ADJ_REQ = []; el('rq_adjn').textContent = '';
+  ['rq_ca', 'rq_de', 'rq_pb', 'rq_clave', 'rq_es', 'rq_me', 'rq_ro', 'rq_so'].forEach(function (k) {
+    var e = el(k); if (e) e.value = '';
+  });
+  el('rq_r').innerHTML = '<div class="aviso">Requerimiento en cola. '
+    + (navigator.onLine ? 'Se está enviando a Procurement.' : 'Se enviará cuando vuelva la señal.') + '</div>';
+  pintarCola();
+  if (navigator.onLine) sincronizar();
+}
+
+function verRequerimientos() {
+  var c = el('rq_lista');
+  if (!navigator.onLine) { c.innerHTML = '<div class="aviso mal">Para consultar hace falta señal.</div>'; return; }
+  c.innerHTML = '<p class="pista">Buscando...</p>';
+  api({ accion: 'misRequerimientos', token: G.token, edificio: v('rq_e') }).then(function (r) {
+    if (!r.ok) { c.innerHTML = '<div class="aviso mal">' + r.msg + '</div>'; return; }
+    if (!r.n) { c.innerHTML = '<p class="pista">Todavía no hay requerimientos de este edificio.</p>'; return; }
+    c.innerHTML = r.solicitudes.map(function (s) {
+      return '<div class="cmp"><div class="cmpx"><b>' + s.num + '</b> · ' + s.estado + '</div>'
+        + '<div class="cmpm">' + s.fecha + ' · ' + s.tipoTxt + (s.sistema ? (' · ' + s.sistema) : '') + '</div>'
+        + '<div class="cmpm">' + s.requerimiento + '</div></div>';
+    }).join('');
+  }).catch(function () { c.innerHTML = '<div class="aviso mal">No se pudo consultar.</div>'; });
+}
+
+/* ── Compromisos ── */
+function verCompromisos() {
+  var c = el('cm_lista'), R = el('cm_res');
+  if (!navigator.onLine) {
+    var g = leer('compromisos', null);
+    if (!g) { c.innerHTML = '<div class="aviso mal">Para verlos la primera vez hace falta señal.</div>'; return; }
+    R.innerHTML = '<p class="pista">Sin señal: lo último que se descargó.</p>';
+    pintarCompromisos(g); return;
+  }
+  c.innerHTML = '<p class="pista">Buscando...</p>'; R.innerHTML = '';
+  api({ accion: 'compromisos', token: G.token,
+        filtro: { q: v('cm_q'), edificio: v('cm_e') } }).then(function (r) {
+    if (!r.ok) { c.innerHTML = '<div class="aviso mal">' + r.msg + '</div>'; return; }
+    guardar('compromisos', r.compromisos || []);
+    R.innerHTML = '<p class="pista">' + r.n + ' compromiso(s)'
+      + (r.resumen && r.resumen.vencidos ? ' · ' + r.resumen.vencidos + ' vencidos' : '') + '</p>';
+    pintarCompromisos(r.compromisos || []);
+  }).catch(function () { c.innerHTML = '<div class="aviso mal">No se pudo consultar.</div>'; });
+}
+
+function pintarCompromisos(lista) {
+  var c = el('cm_lista');
+  if (!lista.length) { c.innerHTML = '<p class="pista">Ningún compromiso coincide.</p>'; return; }
+  c.innerHTML = '';
+  lista.forEach(function (x) {
+    var d = document.createElement('div');
+    d.className = 'cmp' + (x.vencido ? ' venc' : '');
+    d.innerHTML = '<div class="cmpx">' + x.texto + '</div>'
+      + '<div class="cmpm">' + x.edificio + (x.responsable ? (' · ' + x.responsable) : '')
+      + ' · ' + (x.fecha || 'sin fecha') + ' · <b>' + x.estado + '</b></div>';
+    if (x.estado !== 'Cumplido') {
+      var b = document.createElement('div'); b.className = 'cmpb';
+      [['Cumplido', '#1e7a3d'], ['En proceso', '#1B3A6B']].forEach(function (p) {
+        var bt = document.createElement('button');
+        bt.className = 'adjb'; bt.style.borderStyle = 'solid';
+        bt.style.color = p[1]; bt.textContent = p[0];
+        bt.onclick = function () { marcarComp(x.id, p[0]); };
+        b.appendChild(bt);
+      });
+      d.appendChild(b);
+    }
+    c.appendChild(d);
+  });
+}
+
+function marcarComp(id, estado) {
+  encolar({ accion: 'marcarCompromiso', id: id, estado: estado });
+  avisar(navigator.onLine ? 'Marcado como ' + estado + '.'
+       : 'Marcado como ' + estado + '. Se enviará cuando vuelva la señal.');
+  var g = leer('compromisos', []);
+  g.forEach(function (x) { if (x.id === id) x.estado = estado; });
+  guardar('compromisos', g);
+  pintarCompromisos(g);
 }
 
 /* ══════════════ ARRANQUE ══════════════ */
@@ -334,6 +713,19 @@ function sincronizar() {
     abrirApp();
     if (navigator.onLine) descargarCatalogo(function () { abrirApp(); });
   }
+
+  Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (b) {
+    b.onclick = function () { irA(b.getAttribute('data-p')); };
+  });
+  var enlazar = function (id, ev, fn) { var e = el(id); if (e) e[ev] = fn; };
+  enlazar('rq_t',  'onchange', cambiaTipoReq);
+  enlazar('rq_ru', 'onchange', verOtroReq);
+  enlazar('rq_si', 'onchange', verOtroReq);
+  enlazar('rq_foto', 'onclick', function () { adjuntarReq(true); });
+  enlazar('rq_arch', 'onclick', function () { adjuntarReq(false); });
+  enlazar('b_req', 'onclick', enviarReq);
+  enlazar('b_verreq', 'onclick', verRequerimientos);
+  enlazar('b_cmp', 'onclick', verCompromisos);
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(function () {});
